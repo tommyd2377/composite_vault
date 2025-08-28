@@ -1,15 +1,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-"use client";
-
 import React, { useState, useRef, useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import * as anchor from "@coral-xyz/anchor";
+import { Keypair, PublicKey } from "@solana/web3.js";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction,
+  getMint as getTokenMint,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
 import { toast } from "sonner";
 import { useProgram } from "./hooks/useProgram";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { PublicKey } from "@solana/web3.js";
 
 type TokenInfo = {
   address: string;
@@ -21,16 +25,16 @@ type TokenInfo = {
 };
 
 export function SimpleLogButton() {
-  const { publicKey, connection } = useProgram();
+  const { publicKey, connection, program } = useProgram();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [sol, setSol] = useState<number | null>(null);
+  const [processing, setProcessing] = useState(false);
+  // sol balance is available via tokens[0] after fetch; keep state minimal
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [tokenMap, setTokenMap] = useState<Record<string, { name?: string; symbol?: string }>>({});
   const [selections, setSelections] = useState<Record<string, string>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (!containerRef.current) return;
@@ -47,19 +51,16 @@ export function SimpleLogButton() {
     setLoading(true);
     try {
       const lamports = await connection.getBalance(publicKey);
-      const solBalance = lamports / LAMPORTS_PER_SOL;
-      setSol(solBalance);
+  const solBalance = lamports / LAMPORTS_PER_SOL;
 
       const resp = await connection.getParsedTokenAccountsByOwner(publicKey, {
         programId: TOKEN_PROGRAM_ID,
       });
 
-  const parsed = resp.value.map(({ pubkey, account }) => {
-        // parsed data shape from RPC
+      const parsed = resp.value.map(({ pubkey, account }) => {
         const parsedData = (account.data as any).parsed;
         const info = parsedData?.info;
         const tokenAmount = info?.tokenAmount;
-        // compute ui amount as number where possible
         let uiAmount: number | null = null;
         if (tokenAmount?.uiAmount != null) uiAmount = tokenAmount.uiAmount;
         else if (tokenAmount?.uiAmountString) uiAmount = parseFloat(tokenAmount.uiAmountString);
@@ -76,7 +77,6 @@ export function SimpleLogButton() {
         } as TokenInfo;
       });
 
-      // include SOL as first asset
       const solEntry: TokenInfo = {
         address: "SOL",
         mint: "SOL",
@@ -84,7 +84,6 @@ export function SimpleLogButton() {
         decimals: 9,
       };
 
-  // fetch token list once to map mint -> name/symbol (use CDN)
       try {
         if (Object.keys(tokenMap).length === 0) {
           const listUrl =
@@ -97,7 +96,6 @@ export function SimpleLogButton() {
               if (tk.address) map[tk.address] = { name: tk.name, symbol: tk.symbol };
             });
             setTokenMap(map);
-            // apply to parsed
             parsed.forEach((p) => {
               const meta = map[p.mint as string];
               if (meta) {
@@ -119,10 +117,8 @@ export function SimpleLogButton() {
         console.warn("Failed to fetch token list", err);
       }
 
-      // For any tokens still missing symbol/name, try on-chain Metaplex metadata
       try {
         const METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
-
         const missing = parsed.filter((p) => !(p.symbol || p.name) && p.mint);
         if (missing.length > 0) {
           await Promise.all(
@@ -135,11 +131,10 @@ export function SimpleLogButton() {
                 );
                 const info = await connection.getAccountInfo(metaPda);
                 if (info && info.data) {
-                  // parse borsh-like Data: skip key(1) + updateAuthority(32) + mint(32)
                   const buf = info.data;
                   let offset = 1 + 32 + 32;
                   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-                  const nameLen = dv.getUint32(offset, true); // little-endian
+                  const nameLen = dv.getUint32(offset, true);
                   offset += 4;
                   const nameBytes = new Uint8Array(buf.buffer, buf.byteOffset + offset, nameLen);
                   const name = new TextDecoder().decode(nameBytes).replace(/\0+$/, "");
@@ -171,7 +166,6 @@ export function SimpleLogButton() {
   };
 
   const toggleOpen = async () => {
-    // Open -> fetch assets if not already fetched
     if (!open) {
       await fetchAssets();
       setOpen(true);
@@ -183,11 +177,9 @@ export function SimpleLogButton() {
   const onToggleSelect = (t: TokenInfo) => {
     setSelections((prev) => {
       const copy = { ...prev };
-      // check key presence (handles empty-string values)
       if (t.address in copy) {
         delete copy[t.address];
       } else {
-        // default selected amount is empty string (user must input)
         copy[t.address] = "";
       }
       return copy;
@@ -195,9 +187,7 @@ export function SimpleLogButton() {
   };
 
   const onChangeAmount = (t: TokenInfo, raw: string) => {
-    // allow only numbers and dot
     const filtered = raw.replace(/[^0-9.]/g, "");
-    // clamp to available
     const available = Number(t.amount ?? 0);
     let valueNum = Number(filtered || 0);
     if (isNaN(valueNum)) valueNum = 0;
@@ -205,58 +195,203 @@ export function SimpleLogButton() {
 
     setSelections((prev) => {
       const copy = { ...prev };
-      // always set entry when user types so checkbox appears checked
       copy[t.address] = valueNum === 0 ? "" : String(valueNum);
       return copy;
     });
   };
 
+  const handleConfirmDeposit = async () => {
+    if (!publicKey) return toast.error("Connect your wallet first");
+
+    const selected = tokens.filter((t) => t.mint && t.address in selections);
+    if (selected.length === 0) return toast.error("Select at least one token and enter an amount");
+
+    if (!program) return toast.error("Program not available");
+
+    setProcessing(true);
+    try {
+      const compositeMintKeypair = Keypair.generate();
+
+      const [configPda] = await PublicKey.findProgramAddress([
+        Buffer.from("config"),
+        compositeMintKeypair.publicKey.toBuffer(),
+      ], program.programId);
+
+      const [mintAuthPda] = await PublicKey.findProgramAddress([
+        Buffer.from("mint_auth"),
+        configPda.toBuffer(),
+      ], program.programId);
+
+      const mints: PublicKey[] = [];
+      const vaults: PublicKey[] = [];
+      const userAtas: PublicKey[] = [];
+      const depositBNs: anchor.BN[] = [];
+      const perBasketBNs: anchor.BN[] = [];
+
+      for (const t of selected) {
+        const mintPub = new PublicKey(t.mint as string);
+        mints.push(mintPub);
+
+        const vault = await getAssociatedTokenAddress(mintPub, mintAuthPda, true);
+        vaults.push(vault);
+
+        const userAta = await getAssociatedTokenAddress(mintPub, publicKey);
+        userAtas.push(userAta);
+
+        const mintInfo = await getTokenMint(connection, mintPub);
+        const decimals = mintInfo.decimals;
+
+        const rawInput = selections[t.address] ?? "0";
+        const raw = BigInt(Math.floor(Number(rawInput) * Math.pow(10, decimals)));
+        depositBNs.push(new anchor.BN(raw.toString()));
+
+        const perBasket = BigInt(1) * BigInt(Math.pow(10, decimals));
+        perBasketBNs.push(new anchor.BN(perBasket.toString()));
+      }
+
+      const tx = new anchor.web3.Transaction();
+      for (let i = 0; i < vaults.length; i++) {
+        const info = await connection.getAccountInfo(vaults[i]);
+        if (!info) {
+          tx.add(createAssociatedTokenAccountInstruction(publicKey, vaults[i], mintAuthPda, mints[i]));
+        }
+      }
+
+      if (tx.instructions.length > 0) {
+        // send via provider on program so wallet signs
+        if ((program.provider as any)?.sendAndConfirm) {
+          await (program.provider as any).sendAndConfirm(tx, []);
+        } else if ((program.provider as any)?.send) {
+          await (program.provider as any).send(tx, []);
+        } else {
+          return toast.error("Unable to send ATA creation transaction: provider send not available");
+        }
+      }
+
+      const userCompositeAta = await getAssociatedTokenAddress(compositeMintKeypair.publicKey, publicKey);
+
+      // ensure program account exists on-chain to provide better error message
+      const programInfo = await connection.getAccountInfo(program.programId);
+      if (!programInfo) {
+        const msg = `Program not found on-chain at ${program.programId.toBase58()}. Check network / deployment.`;
+        console.error(msg);
+        toast.error(msg);
+      } else {
+        try {
+          const method = (program.methods as any)
+            .depositAndMintWithInit(perBasketBNs, depositBNs, 2)
+            .accounts({
+              user: publicKey,
+              compositeMint: compositeMintKeypair.publicKey,
+              config: configPda,
+              mintAuth: mintAuthPda,
+              userComposite: userCompositeAta,
+              systemProgram: anchor.web3.SystemProgram.programId,
+              tokenProgram: TOKEN_PROGRAM_ID,
+              associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+              rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+            })
+            .remainingAccounts([
+              ...mints.map((m) => ({ pubkey: m, isSigner: false, isWritable: false })),
+              ...vaults.map((v) => ({ pubkey: v, isSigner: false, isWritable: true })),
+              ...userAtas.map((u) => ({ pubkey: u, isSigner: false, isWritable: true })),
+            ])
+            .signers([compositeMintKeypair]);
+
+          const txSig = await method.rpc();
+          console.log("depositAndMintWithInit tx:", txSig);
+          toast.success("Deposit + mint submitted");
+        } catch (err: any) {
+          // If this is a SendTransactionError from web3/anchor, try to extract simulation logs
+          console.error("depositAndMintWithInit error:", err);
+          try {
+            if (typeof err.getLogs === "function") {
+              const logs = await err.getLogs();
+              console.error("Simulation logs:", logs);
+              toast.error("Transaction simulation failed — see console logs for details");
+            } else if (err instanceof Error && (err as any).logs) {
+              console.error("Error logs:", (err as any).logs);
+              toast.error("Transaction failed — see console logs for details");
+            } else {
+              toast.error("Deposit failed — see console for details");
+            }
+          } catch (inner) {
+            console.error("Failed to read error logs", inner);
+            toast.error("Deposit failed and logs could not be retrieved");
+          }
+        }
+      }
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   return (
-    <div className="relative w-full" ref={containerRef}>
-      <Button onClick={toggleOpen} className="w-full bg-green-600 hover:bg-green-700 text-white h-10 text-sm">
-        {open ? "Close Assets" : "Show Wallet Assets"}
-      </Button>
+    <div ref={containerRef} className="relative inline-block">
+      <button className="rounded bg-sky-600 px-3 py-1 text-white" onClick={toggleOpen}>
+        Deposit & Mint
+      </button>
 
       {open && (
-        <div className="absolute z-50 mt-2 w-full bg-gray-800 rounded-md shadow-lg border border-gray-700 max-h-60 overflow-auto">
-          <div className="p-2 text-xs text-gray-300">SOL: {loading ? "..." : sol ?? "-"}</div>
-          <div className="border-t border-gray-700" />
-          {loading && <div className="p-2 text-sm text-gray-400">Loading...</div>}
-          {!loading && tokens.length === 0 && <div className="p-2 text-sm text-gray-400">No token accounts found</div>}
-          <ul>
-            {tokens.map((t) => (
-              <li key={t.address} className="border-t border-gray-700">
-                <div className="flex items-center justify-between p-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      // consider a token selected if it has an entry in the selections map
-                      checked={selections[t.address] !== undefined}
-                      onChange={() => onToggleSelect(t)}
-                      className="w-4 h-4"
-                    />
-                    <div className="truncate text-sm text-gray-200" style={{minWidth: 120}}>
-                      {t.symbol ? `${t.symbol}` : t.name ? `${t.name}` : (t.mint ?? t.address)}
-                    </div>
+        <div className="absolute right-0 mt-2 w-80 rounded border bg-white p-3 shadow-lg z-50">
+          <div className="max-h-64 overflow-auto">
+            {loading ? (
+              <div className="p-2 text-sm">Loading...</div>
+            ) : (
+              tokens.map((t) => (
+                <div key={t.address} className="flex items-center gap-2 border-b py-2">
+                  <input type="checkbox" checked={t.address in selections} onChange={() => onToggleSelect(t)} />
+                  <div className="flex-1 text-sm">
+                    <div className="font-medium">{t.symbol || t.name || t.mint || t.address}</div>
+                    <div className="text-xs text-slate-500">{t.address === "SOL" ? `${t.amount} SOL` : `${t.amount ?? 0}`}</div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="w-24 text-right">
                     <input
-                      type="text"
+                      type="number"
                       inputMode="decimal"
+                      step="any"
+                      min="0"
+                      onClick={(e) => e.stopPropagation()}
+                      onFocus={() => {
+                        // ensure a selection entry exists when user focuses the input
+                        if (!(t.address in selections)) {
+                          setSelections((prev) => ({ ...prev, [t.address]: "" }));
+                        }
+                      }}
+                      className="w-full rounded border px-2 text-right text-xs"
                       value={selections[t.address] ?? ""}
                       onChange={(e) => onChangeAmount(t, e.target.value)}
                       placeholder="0"
-                      className="w-20 bg-gray-900 border border-gray-700 text-right text-sm text-gray-200 px-2 py-1 rounded"
                     />
-                    <div className="text-xs text-gray-400">/ {String(t.amount)}</div>
+                    <div className="text-[10px] text-slate-400">/ {t.amount ?? 0}</div>
                   </div>
                 </div>
-              </li>
-            ))}
-          </ul>
+              ))
+            )}
+          </div>
+
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button className="rounded bg-slate-100 px-3 py-1 text-xs hover:bg-slate-200" onClick={() => setOpen(false)}>
+              Close
+            </button>
+            <button
+              className="rounded bg-emerald-600 px-3 py-1 text-xs text-white hover:bg-emerald-700 disabled:opacity-60"
+              onClick={async () => {
+                setProcessing(true);
+                try {
+                  await handleConfirmDeposit();
+                } finally {
+                  setProcessing(false);
+                }
+              }}
+              disabled={processing}
+            >
+              {processing ? "Submitting..." : "Confirm"}
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
- 
+                
