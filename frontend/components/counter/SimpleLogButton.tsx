@@ -328,24 +328,52 @@ export function SimpleLogButton() {
 
   return (
     <div ref={containerRef} className="relative inline-block">
-      <button className="rounded bg-sky-600 px-3 py-1 text-white" onClick={toggleOpen}>
-        Deposit & Mint
-      </button>
+      <div className="flex items-center gap-2">
+        {/* Keep a consistent look with the wallet button by reusing the WalletMultiButton styles */}
+        <button
+          onClick={toggleOpen}
+          className="wallet-adapter-button wallet-adapter-dropdown inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#06B6D4] px-4 py-2 text-sm font-medium text-white shadow-lg hover:opacity-95"
+        >
+          Deposit & Mint
+        </button>
+  {/* Wallet connect is expected to be displayed globally (header); avoid duplicating it here */}
+      </div>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 rounded border bg-white p-3 shadow-lg z-50">
-          <div className="max-h-64 overflow-auto">
+        <div className="absolute right-0 mt-2 w-96 max-w-sm rounded-xl bg-gray-900/90 ring-1 ring-white/10 p-4 shadow-2xl z-50">
+          <div className="flex items-center justify-between pb-2 border-b border-white/5">
+            <div className="text-sm font-semibold">Select assets</div>
+            <button onClick={() => setOpen(false)} className="text-xs text-white/60 hover:text-white">
+              Close
+            </button>
+          </div>
+
+          <div className="mt-3 max-h-64 overflow-auto space-y-2 pr-2">
             {loading ? (
-              <div className="p-2 text-sm">Loading...</div>
+              <div className="p-2 text-sm text-white/70">Loading...</div>
             ) : (
               tokens.map((t) => (
-                <div key={t.address} className="flex items-center gap-2 border-b py-2">
-                  <input type="checkbox" checked={t.address in selections} onChange={() => onToggleSelect(t)} />
-                  <div className="flex-1 text-sm">
-                    <div className="font-medium">{t.symbol || t.name || t.mint || t.address}</div>
-                    <div className="text-xs text-slate-500">{t.address === "SOL" ? `${t.amount} SOL` : `${t.amount ?? 0}`}</div>
+                <div
+                  key={t.address}
+                  className="flex items-center gap-3 rounded-md p-2 hover:bg-white/2"
+                >
+                  <input
+                    aria-label={`select-${t.address}`}
+                    type="checkbox"
+                    checked={t.address in selections}
+                    onChange={() => onToggleSelect(t)}
+                    className="h-4 w-4 text-emerald-400 rounded"
+                  />
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-medium truncate text-white">{t.symbol || t.name || t.mint || t.address}</div>
+                      <div className="text-[11px] text-white/60 truncate">{t.address === "SOL" ? `${t.amount} SOL` : `${t.amount ?? 0}`}</div>
+                    </div>
+                    <div className="text-[11px] text-white/40 truncate">{t.mint ?? t.address}</div>
                   </div>
-                  <div className="w-24 text-right">
+
+                  <div className="w-28 text-right">
                     <input
                       type="number"
                       inputMode="decimal"
@@ -353,29 +381,31 @@ export function SimpleLogButton() {
                       min="0"
                       onClick={(e) => e.stopPropagation()}
                       onFocus={() => {
-                        // ensure a selection entry exists when user focuses the input
                         if (!(t.address in selections)) {
                           setSelections((prev) => ({ ...prev, [t.address]: "" }));
                         }
                       }}
-                      className="w-full rounded border px-2 text-right text-xs"
+                      className="w-full rounded bg-gray-800/60 border border-white/6 px-2 py-1 text-right text-sm text-white"
                       value={selections[t.address] ?? ""}
                       onChange={(e) => onChangeAmount(t, e.target.value)}
                       placeholder="0"
                     />
-                    <div className="text-[10px] text-slate-400">/ {t.amount ?? 0}</div>
+                    <div className="text-[10px] text-white/40">/ {t.amount ?? 0}</div>
                   </div>
                 </div>
               ))
             )}
           </div>
 
-          <div className="mt-2 flex items-center justify-end gap-2">
-            <button className="rounded bg-slate-100 px-3 py-1 text-xs hover:bg-slate-200" onClick={() => setOpen(false)}>
-              Close
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button
+              className="rounded-md bg-white/5 px-3 py-1 text-xs text-white/80 hover:bg-white/8"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
             </button>
             <button
-              className="rounded bg-emerald-600 px-3 py-1 text-xs text-white hover:bg-emerald-700 disabled:opacity-60"
+              className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-60"
               onClick={async () => {
                 setProcessing(true);
                 try {
