@@ -1,0 +1,26 @@
+[package]
+name = "composite_vault"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
+anchor-spl = "0.31.1"
+
+[features]
+default = []
+no-entrypoint = []
+cpi = []
+idl-build = ["anchor-spl/idl-build"]
+no-idl = []
+no-log-ix-name = []
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+

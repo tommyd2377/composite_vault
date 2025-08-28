@@ -1,0 +1,25 @@
+[toolchain]
+anchor_version = "0.31.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+composite_vault = "FHXYD24oNN2A2FZ3jBXaEzfbtb2hTuZA5BSnUagRqgSS"
+
+[registry]
+url = "https://anchor.projectserum.com"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[workspace]
+members = ["programs/*"]
+
+[scripts]
+test = "npm test"
+
+[build]
+docker = false
