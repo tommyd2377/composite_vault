@@ -1,0 +1,464 @@
+{
+  "address": "FHXYD24oNN2A2FZ3jBXaEzfbtb2hTuZA5BSnUagRqgSS",
+  "metadata": {
+    "name": "composite_vault",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "deposit_and_mint_with_init",
+      "docs": [
+        "Combined initialize + deposit + mint instruction.",
+        "- On first call: initializes composite mint, config PDA, and vault ATAs (for PDA owner) using init_if_needed / associated token CPI.",
+        "- On subsequent calls: skips init and performs deposit+mint only.",
+        "- Parameters:",
+        "- amounts_per_unit: used for initialization; when config already exists we verify it matches stored config.",
+        "- amounts: deposit amounts for each underlying asset (length must equal num_assets)",
+        "- composite_decimals: used only when initializing the composite mint (e.g., 0)"
+      ],
+      "discriminator": [
+        110,
+        47,
+        226,
+        65,
+        127,
+        229,
+        189,
+        61
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "composite_mint",
+          "docs": [
+            "Composite mint (created here if missing). Recommend decimals = 0 for clean unit semantics."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "docs": [
+            "Config PDA: one per composite_mint — create if needed"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "composite_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_auth",
+          "docs": [
+            "PDA used as mint authority for the composite mint and owner of vault ATAs"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_composite",
+          "docs": [
+            "User’s destination composite ATA (auto-create if missing)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "composite_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "SPL Token program for CPI"
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "docs": [
+            "Associated Token program for ATA init CPI"
+          ],
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amounts_per_unit",
+          "type": {
+            "vec": "u64"
+          }
+        },
+        {
+          "name": "amounts",
+          "type": {
+            "vec": "u64"
+          }
+        },
+        {
+          "name": "composite_decimals",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "redeem_and_withdraw",
+      "docs": [
+        "Redeem function preserved as before (no changes required)"
+      ],
+      "discriminator": [
+        167,
+        180,
+        243,
+        160,
+        143,
+        186,
+        156,
+        37
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "composite_mint",
+          "docs": [
+            "Composite mint"
+          ],
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "composite_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_auth",
+          "docs": [
+            "PDA that owns the vaults and mints the composite"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_composite",
+          "docs": [
+            "User's composite ATA to burn from"
+          ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_composite",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "CompositeConfig",
+      "discriminator": [89,27,15,142,235,58,19,20],
+      "type": { "defined": "CompositeConfig" }
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidUnit",
+      "msg": "Invalid per-unit amounts"
+    },
+    {
+      "code": 6001,
+      "name": "BadMintAuth",
+      "msg": "Composite mint has wrong authority"
+    },
+    {
+      "code": 6002,
+      "name": "BadDecimals",
+      "msg": "Composite mint has unexpected decimals"
+    },
+    {
+      "code": 6003,
+      "name": "WrongMint",
+      "msg": "Wrong mint passed to instruction"
+    },
+    {
+      "code": 6004,
+      "name": "ZeroAmount",
+      "msg": "Zero amounts are not allowed"
+    },
+    {
+      "code": 6005,
+      "name": "NonMultipleDeposit",
+      "msg": "Deposit must be an exact multiple of the configured per-unit amount"
+    },
+    {
+      "code": 6006,
+      "name": "RatioMismatch",
+      "msg": "Deposits do not match the required ratio"
+    },
+    {
+      "code": 6007,
+      "name": "ZeroMint",
+      "msg": "Mint amount computed to zero"
+    },
+    {
+      "code": 6008,
+      "name": "TooManyAssets",
+      "msg": "Too many assets configured"
+    },
+    {
+      "code": 6009,
+      "name": "MissingAccounts",
+      "msg": "Missing remaining accounts for dynamic assets"
+    },
+    {
+      "code": 6010,
+      "name": "WrongArgumentLength",
+      "msg": "Wrong number of arguments provided"
+    },
+    {
+      "code": 6011,
+      "name": "ZeroAssets",
+      "msg": "Zero assets configured"
+    }
+  ],
+  "types": [
+    {
+      "name": "CompositeConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "composite_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "num_assets",
+            "type": "u8"
+          },
+          {
+            "name": "mints",
+            "type": {
+              "array": [
+                "pubkey",
+                8
+              ]
+            }
+          },
+          {
+            "name": "amounts_per_unit",
+            "type": {
+              "array": [
+                "u64",
+                8
+              ]
+            }
+          },
+          {
+            "name": "bump_config",
+            "type": "u8"
+          },
+          {
+            "name": "bump_mint_auth",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}
