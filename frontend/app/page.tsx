@@ -1,4 +1,6 @@
 import { CounterCard } from "@/components/counter/CounterCard";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faTwitter, faGithub, faTelegram, faLinkedin } from "@fortawesome/free-brands-svg-icons";
 
 export default function Home() {
   return (
@@ -7,10 +9,10 @@ export default function Home() {
 
       <div className="relative z-10 mb-8 text-center">
         <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-400 to-blue-500 text-transparent bg-clip-text">
-          Solana Counter App
+          Blendr
         </h1>
         <p className="text-gray-400">
-          A minimal dApp built with Anchor & Next.js
+          Create custom token blends with ease
         </p>
       </div>
 
@@ -18,10 +20,33 @@ export default function Home() {
         <CounterCard />
       </div>
 
-      <footer className="mt-20 text-center text-sm text-gray-500 relative z-10">
-        <p>Powered by Anchor, Web3.js, and Shadcn UI</p>
-        <p className="mt-2">Created as a minimal Solana dApp example</p>
-      </footer>
+      <footer style={{ textAlign: 'center', paddingTop: '20px' }}>
+  <p style={{ marginTop: '20px', fontWeight: 'bold', fontSize: '1rem', background: 'linear-gradient(to right, #9945FF, #14F195)', WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent' }}>Presented by Thomas DeVito</p>
+  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2px' }}>
+    <a href="https://x.com/thomasfdevito" target="_blank" rel="noopener noreferrer">
+      <FontAwesomeIcon icon={faTwitter} style={{ margin: '0 10px', fontSize: '24px', color: 'white' }} />
+    </a>
+    <a href="https://telegram.com" target="_blank" rel="noopener noreferrer">
+      <FontAwesomeIcon icon={faTelegram} style={{ margin: '0 10px', fontSize: '24px', color: 'white' }} />
+    </a>
+    <a href="https://www.linkedin.com/in/tdevito" target="_blank" rel="noopener noreferrer">
+      <FontAwesomeIcon icon={faLinkedin} style={{ margin: '0 10px', fontSize: '24px', color: 'white' }} />
+    </a>
+    <a href="https://github.com/tommyd2377" target="_blank" rel="noopener noreferrer">
+      <FontAwesomeIcon icon={faGithub} style={{ margin: '0 10px', fontSize: '24px', color: 'white' }} />
+    </a>
+  </div>
+  <br />
+  <div style={{
+  fontFamily: 'Arial, sans-serif',
+  fontSize: '16px',
+  textAlign: 'center',
+  color: '#333'
+}}>
+  Made with <span style={{ color: '#e25555', fontSize: '24px' }}>&hearts;</span> in NYC
+</div>
+</footer>
     </div>
   );
 }
