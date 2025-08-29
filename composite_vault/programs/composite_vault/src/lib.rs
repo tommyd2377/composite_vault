@@ -9,9 +9,20 @@ pub const MAX_ASSETS: usize = 8;
 
 declare_id!("FHXYD24oNN2A2FZ3jBXaEzfbtb2hTuZA5BSnUagRqgSS");
 
+// helper: gcd for u64
+fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        let t = a % b;
+        a = b;
+        b = t;
+    }
+    a
+}
+
 #[program]
 pub mod composite_vault {
     use super::*;
+    
 
     /// Combined initialize + deposit + mint instruction.
     /// - On first call: initializes composite mint, config PDA, and vault ATAs (for PDA owner) using init_if_needed / associated token CPI.
@@ -44,10 +55,16 @@ pub mod composite_vault {
             let config = &mut ctx.accounts.config;
             config.authority = ctx.accounts.user.key();
             config.num_assets = n as u8;
+            // normalize amounts_per_unit by gcd so stored per-unit is minimal integers
+            let mut gcd_all: u64 = amounts_per_unit[0];
+            for i in 1..n {
+                gcd_all = gcd_u64(gcd_all, amounts_per_unit[i]);
+            }
 
             for i in 0..n {
                 config.mints[i] = ctx.remaining_accounts[i].key();
-                config.amounts_per_unit[i] = amounts_per_unit[i];
+                // divide by gcd to store normalized per-unit
+                config.amounts_per_unit[i] = amounts_per_unit[i] / gcd_all;
             }
             config.composite_mint = ctx.accounts.composite_mint.key();
             config.mint_authority = ctx.accounts.mint_auth.key();
@@ -60,7 +77,7 @@ pub mod composite_vault {
             require_keys_eq!(ctx.accounts.composite_mint.mint_authority.unwrap(), ctx.accounts.mint_auth.key(), CompositeError::BadMintAuth);
             require!(ctx.accounts.composite_mint.decimals == composite_decimals, CompositeError::BadDecimals);
 
-            msg!("deposit_and_mint_with_init: performed first-time init: num_assets={}", n);
+            msg!("deposit_and_mint_with_init: performed first-time init: num_assets={} gcd={}", n, gcd_all);
         } else {
             // Subsequent call: validate provided amounts_per_unit matches stored config (to preserve validation)
             n = ctx.accounts.config.num_assets as usize;
@@ -80,7 +97,9 @@ pub mod composite_vault {
         let mut k_opt: Option<u64> = None;
         for i in 0..n {
             let amount = amounts[i];
-            let per_unit = ctx.accounts.config.amounts_per_unit[i];
+            // when initializing, use the amounts_per_unit argument for k computation so a user
+            // depositing the full (un-normalized) basket mints the expected quantity.
+            let per_unit = if is_init { amounts_per_unit[i] } else { ctx.accounts.config.amounts_per_unit[i] };
             require!(amount > 0, CompositeError::ZeroAmount);
             require!(per_unit > 0, CompositeError::InvalidUnit);
             require!(amount % per_unit == 0, CompositeError::NonMultipleDeposit);

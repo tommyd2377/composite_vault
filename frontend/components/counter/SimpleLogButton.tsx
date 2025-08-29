@@ -29,6 +29,9 @@ export function SimpleLogButton() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [confirmModalText, setConfirmModalText] = useState("");
+  const confirmResolveRef = useRef<(v: boolean) => void | null>(null);
   // sol balance is available via tokens[0] after fetch; keep state minimal
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [tokenMap, setTokenMap] = useState<Record<string, { name?: string; symbol?: string }>>({});
@@ -175,6 +178,8 @@ export function SimpleLogButton() {
   };
 
   const onToggleSelect = (t: TokenInfo) => {
+  // don't allow selecting native SOL here (not an SPL token)
+  if (t.address === "SOL") return;
     setSelections((prev) => {
       const copy = { ...prev };
       if (t.address in copy) {
@@ -195,7 +200,9 @@ export function SimpleLogButton() {
 
     setSelections((prev) => {
       const copy = { ...prev };
-      copy[t.address] = valueNum === 0 ? "" : String(valueNum);
+  // don't allow editing amounts for SOL (not an SPL token in this flow)
+  if (t.address === "SOL") return copy;
+  copy[t.address] = valueNum === 0 ? "" : String(valueNum);
       return copy;
     });
   };
@@ -205,6 +212,12 @@ export function SimpleLogButton() {
 
     const selected = tokens.filter((t) => t.mint && t.address in selections);
     if (selected.length === 0) return toast.error("Select at least one token and enter an amount");
+
+    // Prevent passing the literal string "SOL" to PublicKey — SOL is native lamports, not an SPL mint
+    const selectedSpl = selected.filter((t) => t.mint && t.mint !== "SOL");
+    if (selectedSpl.length === 0) {
+      return toast.error("SOL (native) cannot be deposited via this flow — select one or more SPL tokens");
+    }
 
     if (!program) return toast.error("Program not available");
 
@@ -226,9 +239,10 @@ export function SimpleLogButton() {
       const vaults: PublicKey[] = [];
       const userAtas: PublicKey[] = [];
       const depositBNs: anchor.BN[] = [];
-      const perBasketBNs: anchor.BN[] = [];
+  const perBasketBNs: anchor.BN[] = [];
+      const decimalsList: number[] = [];
 
-      for (const t of selected) {
+  for (const t of selectedSpl) {
         const mintPub = new PublicKey(t.mint as string);
         mints.push(mintPub);
 
@@ -238,18 +252,19 @@ export function SimpleLogButton() {
         const userAta = await getAssociatedTokenAddress(mintPub, publicKey);
         userAtas.push(userAta);
 
-        const mintInfo = await getTokenMint(connection, mintPub);
-        const decimals = mintInfo.decimals;
+  const mintInfo = await getTokenMint(connection, mintPub);
+  const decimals = mintInfo.decimals;
+  decimalsList.push(decimals ?? 0);
 
-        const rawInput = selections[t.address] ?? "0";
+  const rawInput = selections[t.address] ?? "0";
         const raw = BigInt(Math.floor(Number(rawInput) * Math.pow(10, decimals)));
         depositBNs.push(new anchor.BN(raw.toString()));
 
-        const perBasket = BigInt(1) * BigInt(Math.pow(10, decimals));
-        perBasketBNs.push(new anchor.BN(perBasket.toString()));
+  const perBasket = BigInt(1) * BigInt(Math.pow(10, decimals));
+  perBasketBNs.push(new anchor.BN(perBasket.toString()));
       }
 
-      const tx = new anchor.web3.Transaction();
+  const tx = new anchor.web3.Transaction();
       for (let i = 0; i < vaults.length; i++) {
         const info = await connection.getAccountInfo(vaults[i]);
         if (!info) {
@@ -270,6 +285,83 @@ export function SimpleLogButton() {
 
       const userCompositeAta = await getAssociatedTokenAddress(compositeMintKeypair.publicKey, publicKey);
 
+      // Determine whether we're initializing a new config (first-time init)
+      // If the config PDA does not exist, use the selected deposit amounts as the amounts_per_unit
+      const perUnitForCall: anchor.BN[] = [];
+      let isInitLocal = false;
+      try {
+        const cfgInfo = await connection.getAccountInfo(configPda);
+        if (!cfgInfo) {
+          // first-time init: use deposit amounts as the per-unit amounts
+          isInitLocal = true;
+          for (const d of depositBNs) perUnitForCall.push(new anchor.BN(d.toString()));
+        } else {
+          // existing config: use the canonical per-basket amounts we computed
+          for (const p of perBasketBNs) perUnitForCall.push(new anchor.BN(p.toString()));
+        }
+      } catch {
+        // fallback: use defaults
+        for (const p of perBasketBNs) perUnitForCall.push(new anchor.BN(p.toString()));
+      }
+
+      // If this is an init, show a confirmation with the normalized (gcd-reduced) basket
+      if (isInitLocal) {
+        // compute gcd of depositBNs as BigInt
+        const bigints = depositBNs.map((b) => BigInt(b.toString()));
+        const bigGcd = (a: bigint, b: bigint): bigint => {
+          a = a < BigInt(0) ? -a : a;
+          b = b < BigInt(0) ? -b : b;
+          while (b !== BigInt(0)) {
+            const t = a % b;
+            a = b;
+            b = t;
+          }
+          return a;
+        };
+        const gcdArray = (arr: bigint[]) => arr.reduce((acc, v) => bigGcd(acc, v), arr[0]);
+        const gcd = gcdArray(bigints);
+        const normalized = bigints.map((v) => v / gcd);
+        const human = normalized.map((v, i) => {
+          const dec = decimalsList[i] ?? 0;
+          const denom = Number(BigInt(10) ** BigInt(dec));
+          const val = Number(v) / denom;
+          return `${val} ${tokens.find((t) => t.mint === mints[i].toBase58())?.symbol ?? ''}`.trim();
+        });
+        const msg = `You're creating a new composite. 1 composite = ${human.join(' + ')}.`;
+        setConfirmModalText(msg);
+        // show modal and await user's decision
+        const userOk = await new Promise<boolean>((res) => {
+          confirmResolveRef.current = res;
+          setConfirmModalOpen(true);
+        });
+        setConfirmModalOpen(false);
+        confirmResolveRef.current = null;
+        if (!userOk) return;
+      }
+
+      // Client-side validation: ensure each deposit is a multiple of per-unit and all k_i are equal
+      const validateDeposits = (deposits: anchor.BN[], perUnits: anchor.BN[]) => {
+        if (deposits.length !== perUnits.length) return { ok: false, reason: "length mismatch" };
+        let k: bigint | null = null;
+        for (let i = 0; i < deposits.length; i++) {
+          const amount = BigInt(deposits[i].toString());
+          const per = BigInt(perUnits[i].toString());
+          if (per <= BigInt(0)) return { ok: false, reason: `invalid per-unit for index ${i}` };
+          if (amount <= BigInt(0)) return { ok: false, reason: `zero amount for index ${i}` };
+          if (amount % per !== BigInt(0)) return { ok: false, reason: `token ${i} amount not multiple of per-unit` };
+          const k_i = amount / per;
+          if (k === null) k = k_i;
+          else if (k !== k_i) return { ok: false, reason: `ratio mismatch: token ${i} gives k=${k_i} vs expected ${k}` };
+        }
+        return { ok: true, k: k ?? BigInt(0) };
+      };
+
+      const v = validateDeposits(depositBNs, perUnitForCall);
+      if (!v.ok) {
+        toast.error(`Validation failed: ${v.reason}`);
+        return;
+      }
+
       // ensure program account exists on-chain to provide better error message
       const programInfo = await connection.getAccountInfo(program.programId);
       if (!programInfo) {
@@ -279,7 +371,7 @@ export function SimpleLogButton() {
       } else {
         try {
           const method = (program.methods as any)
-            .depositAndMintWithInit(perBasketBNs, depositBNs, 2)
+            .depositAndMintWithInit(perUnitForCall, depositBNs, 2)
             .accounts({
               user: publicKey,
               compositeMint: compositeMintKeypair.publicKey,
@@ -338,6 +430,34 @@ export function SimpleLogButton() {
         </button>
   {/* Wallet connect is expected to be displayed globally (header); avoid duplicating it here */}
       </div>
+      {/* Confirmation modal (non-blocking) */}
+      {confirmModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative z-50 w-96 rounded-lg bg-gray-800 p-4">
+            <div className="text-sm font-semibold mb-2">Confirm composite creation</div>
+            <div className="text-sm text-white/80 mb-4">{confirmModalText}</div>
+            <div className="flex justify-end gap-2">
+              <button
+                className="rounded-md bg-white/5 px-3 py-1 text-xs text-white/80 hover:bg-white/8"
+                onClick={() => {
+                  if (confirmResolveRef.current) confirmResolveRef.current(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-600"
+                onClick={() => {
+                  if (confirmResolveRef.current) confirmResolveRef.current(true);
+                }}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div className="absolute right-0 mt-2 w-96 max-w-sm rounded-xl bg-gray-900/90 ring-1 ring-white/10 p-4 shadow-2xl z-50">
@@ -362,6 +482,7 @@ export function SimpleLogButton() {
                     type="checkbox"
                     checked={t.address in selections}
                     onChange={() => onToggleSelect(t)}
+                    disabled={t.address === "SOL"}
                     className="h-4 w-4 text-emerald-400 rounded"
                   />
 

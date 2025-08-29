@@ -10,7 +10,7 @@ export default function Home() {
 
       <div className="relative z-10 mb-8 text-center">
         <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-400 to-blue-500 text-transparent bg-clip-text">
-          Blendr
+          Blndr
         </h1>
         <p className="text-gray-400">
           Create custom token blends with ease
