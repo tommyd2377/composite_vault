@@ -1,5 +1,4 @@
 import TokenLeaderboard from "@/components/TokenLeaderboard";
-import { CounterCard } from "@/components/counter/CounterCard";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTwitter, faGithub, faTelegram, faLinkedin } from "@fortawesome/free-brands-svg-icons";
 
@@ -18,9 +17,7 @@ export default function Home() {
       </div>
 
       <div className="relative z-10 w-full flex flex-col lg:flex-row items-start gap-6">
-        <div className="w-full lg:w-[380px]">
-          <CounterCard />
-        </div>
+  {/* Counter UI removed (unused) */}
         <div className="flex-1 max-w-2xl w-full">
           <TokenLeaderboard />
         </div>
