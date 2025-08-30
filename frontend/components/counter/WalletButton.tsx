@@ -36,7 +36,7 @@ const WalletMultiButton = dynamic(
           <div
             className="h-4 bg-white/10 rounded-sm"
             style={{ width: "100px" }}
-          ></div>
+          ></div> 
         </div>
       );
     },

@@ -1,7 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import * as anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import {
@@ -14,6 +20,10 @@ import {
 import { toast } from "sonner";
 import { useProgram } from "./hooks/useProgram";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
+// no dynamic imports required here
+
+// Note: WalletMultiButton is used in the dedicated WalletButton component.
+// We intentionally avoid rendering it here to keep Deposit behavior separate.
 
 type TokenInfo = {
   address: string;
@@ -37,6 +47,7 @@ export function SimpleLogButton() {
   const [tokenMap, setTokenMap] = useState<Record<string, { name?: string; symbol?: string }>>({});
   const [selections, setSelections] = useState<Record<string, string>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
+  
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -49,7 +60,9 @@ export function SimpleLogButton() {
     return () => document.removeEventListener("click", onDocClick);
   }, []);
 
-  const fetchAssets = async () => {
+  
+
+  const fetchAssets = useCallback(async () => {
     if (!publicKey) return toast.error("Connect your wallet first");
     setLoading(true);
     try {
@@ -166,16 +179,21 @@ export function SimpleLogButton() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [publicKey, connection, tokenMap]);
 
-  const toggleOpen = async () => {
+  const toggleOpen = React.useCallback(async () => {
     if (!open) {
       await fetchAssets();
       setOpen(true);
     } else {
       setOpen(false);
     }
-  };
+  }, [open, fetchAssets]);
+  // NOTE: previous implementation tried to mutate the inner DOM of WalletMultiButton
+  // to replace labels and intercept clicks. That approach was brittle and caused
+  // layout/color mismatches. We now render a styled button that uses the
+  // wallet-adapter classes and calls the stable `fetchAssets` callback when
+  // opened. This keeps visuals identical and avoids DOM mutation.
 
   const onToggleSelect = (t: TokenInfo) => {
   // don't allow selecting native SOL here (not an SPL token)
@@ -421,14 +439,32 @@ export function SimpleLogButton() {
   return (
     <div ref={containerRef} className="relative inline-block">
       <div className="flex items-center gap-2">
-        {/* Keep a consistent look with the wallet button by reusing the WalletMultiButton styles */}
-        <button
-          onClick={toggleOpen}
-          className="wallet-adapter-button wallet-adapter-dropdown inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#06B6D4] px-4 py-2 text-sm font-medium text-white shadow-lg hover:opacity-95"
-        >
-          Deposit & Mint
-        </button>
-  {/* Wallet connect is expected to be displayed globally (header); avoid duplicating it here */}
+        {/* Visually match the WalletMultiButton from the wallet adapter */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="inline-block">
+                  <button
+                    onClick={toggleOpen}
+                    className="wallet-adapter-button wallet-adapter-button-trigger wallet-adapter-dropdown inline-flex items-center gap-2"
+                    style={{ width: "173.47px", height: "48px", padding: "0 12px", gap: "8px" }}
+                  >
+                    <div
+                      className="wallet-adapter-button-start-icon"
+                      style={{ width: "24px", height: "24px" }}
+                    >
+                      <div className="rounded-full bg-purple-400/30 w-6 h-6" />
+                    </div>
+                    <span className="wallet-adapter-button-label text-sm font-medium text-white">Deposit & Mint</span>
+                  </button>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Create your own composite token</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        {/* Wallet connect is expected to be displayed globally (header); avoid duplicating it here */}
       </div>
       {/* Confirmation modal (non-blocking) */}
       {confirmModalOpen && (
