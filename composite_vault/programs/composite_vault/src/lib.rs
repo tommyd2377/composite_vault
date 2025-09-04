@@ -66,6 +66,8 @@ pub mod composite_vault {
                 // divide by gcd to store normalized per-unit
                 config.amounts_per_unit[i] = amounts_per_unit[i] / gcd_all;
             }
+            // store the original gcd so we can scale normalized units back to raw token amounts
+            config.unit_scale = gcd_all;
             config.composite_mint = ctx.accounts.composite_mint.key();
             config.mint_authority = ctx.accounts.mint_auth.key();
 
@@ -82,8 +84,20 @@ pub mod composite_vault {
             // Subsequent call: validate provided amounts_per_unit matches stored config (to preserve validation)
             n = ctx.accounts.config.num_assets as usize;
             require!(amounts_per_unit.len() == n, CompositeError::WrongArgumentLength);
+            // Allow callers to provide either the same normalized per-unit amounts stored in config
+            // or the original un-normalized amounts (scaled by a common gcd). To support the latter,
+            // compute the gcd of the provided vector and compare the normalized values to the stored
+            // config.amounts_per_unit.
+            let mut provided_gcd: u64 = amounts_per_unit[0];
+            for i in 1..n {
+                provided_gcd = gcd_u64(provided_gcd, amounts_per_unit[i]);
+            }
             for i in 0..n {
-                require!(amounts_per_unit[i] == ctx.accounts.config.amounts_per_unit[i], CompositeError::InvalidUnit);
+                // provided must be divisible by gcd
+                require!(provided_gcd > 0, CompositeError::InvalidUnit);
+                require!(amounts_per_unit[i] % provided_gcd == 0, CompositeError::InvalidUnit);
+                let normalized = amounts_per_unit[i] / provided_gcd;
+                require!(normalized == ctx.accounts.config.amounts_per_unit[i], CompositeError::InvalidUnit);
             }
             require!(ctx.remaining_accounts.len() >= n * 3, CompositeError::MissingAccounts);
             msg!("deposit_and_mint_with_init: skipping init (config already exists) num_assets={}", n);
@@ -97,9 +111,12 @@ pub mod composite_vault {
         let mut k_opt: Option<u64> = None;
         for i in 0..n {
             let amount = amounts[i];
-            // when initializing, use the amounts_per_unit argument for k computation so a user
-            // depositing the full (un-normalized) basket mints the expected quantity.
-            let per_unit = if is_init { amounts_per_unit[i] } else { ctx.accounts.config.amounts_per_unit[i] };
+            // Use the provided amounts_per_unit for k computation. When this is the first
+            // call (is_init), the provided values will be un-normalized and used directly.
+            // On subsequent calls we validated that the provided vector (maybe scaled by a
+            // gcd) matches the stored normalized config, so using the provided values here
+            // yields the caller-expected k.
+            let per_unit = amounts_per_unit[i];
             require!(amount > 0, CompositeError::ZeroAmount);
             require!(per_unit > 0, CompositeError::InvalidUnit);
             require!(amount % per_unit == 0, CompositeError::NonMultipleDeposit);
@@ -226,8 +243,8 @@ anchor_spl::associated_token::create(cpi_ctx)?;
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
         token::burn(cpi_ctx, amount_composite)?;
 
-        // For each asset, transfer amount_composite * per_unit from vault -> user
-        let n = config.num_assets as usize;
+    // For each asset, transfer amount_composite * per_unit * unit_scale from vault -> user
+    let n = config.num_assets as usize;
         require!(n > 0, CompositeError::ZeroAssets);
         require!(ctx.remaining_accounts.len() >= n * 2, CompositeError::MissingAccounts);
 
@@ -241,7 +258,9 @@ anchor_spl::associated_token::create(cpi_ctx)?;
 
         for i in 0..n {
             let per = config.amounts_per_unit[i];
-            let amt = amount_composite.checked_mul(per).ok_or(ProgramError::Custom(6008))?;
+            // scale normalized per-unit by stored unit_scale to get raw token units
+            let scaled_per = per.checked_mul(config.unit_scale).ok_or(ProgramError::Custom(6009))?;
+            let amt = amount_composite.checked_mul(scaled_per).ok_or(ProgramError::Custom(6008))?;
             let vault_info = &ctx.remaining_accounts[i + n];
             let user_token_info = &ctx.remaining_accounts[i + n + n];
 
@@ -364,6 +383,7 @@ pub struct CompositeConfig {
     // fixed-size arrays for mints and per-unit amounts; only first num_assets entries are valid
     pub mints: [Pubkey; MAX_ASSETS],
     pub amounts_per_unit: [u64; MAX_ASSETS],
+    pub unit_scale: u64, // gcd used to scale normalized per-unit amounts into raw token units
     pub bump_config: u8,
     pub bump_mint_auth: u8,
 }
@@ -377,6 +397,7 @@ impl CompositeConfig {
         1  + // num_assets
         (32 * MAX_ASSETS) + // mints array
         (8 * MAX_ASSETS)  + // amounts_per_unit array
+    8  + // unit_scale
         1  + // bump_config
         1;   // bump_mint_auth
 }

@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "programs/composite_vault"
+]
+
+[profile.release]
+overflow-checks = true
