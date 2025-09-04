@@ -18,7 +18,7 @@ export default function Home() {
       </div>
 
   <div className="relative z-10 w-full flex flex-col lg:flex-row items-center justify-center gap-6">
-        <div className="w-full lg:w-[380px]">
+        <div className="w-full lg:w-[380px] flex flex-col items-start mt-0 self-start">
           <CounterCard />
         </div>
         <div className="flex-1 max-w-2xl w-full">

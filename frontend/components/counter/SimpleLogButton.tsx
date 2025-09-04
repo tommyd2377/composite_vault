@@ -446,8 +446,7 @@ export function SimpleLogButton() {
                 <div className="inline-block">
                   <button
                     onClick={toggleOpen}
-                    className="wallet-adapter-button wallet-adapter-button-trigger wallet-adapter-dropdown inline-flex items-center gap-2"
-                    style={{ width: "173.47px", height: "48px", padding: "0 12px", gap: "8px" }}
+                    className="wallet-adapter-button wallet-adapter-button-trigger"
                   >
                     <div
                       className="wallet-adapter-button-start-icon"
@@ -455,7 +454,7 @@ export function SimpleLogButton() {
                     >
                       <div className="rounded-full bg-purple-400/30 w-6 h-6" />
                     </div>
-                    <span className="wallet-adapter-button-label text-sm font-medium text-white">Deposit & Mint</span>
+                    <span className="wallet-adapter-button-label text-sm font-medium text-white">Create</span>
                   </button>
                 </div>
               </TooltipTrigger>
