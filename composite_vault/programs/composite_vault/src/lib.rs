@@ -7,7 +7,7 @@ use anchor_spl::{
 // maximum number of underlying assets supported
 pub const MAX_ASSETS: usize = 8;
 
-declare_id!("FHXYD24oNN2A2FZ3jBXaEzfbtb2hTuZA5BSnUagRqgSS");
+declare_id!("HxGs1wgKnbVgC2FxqmgN7RcpuuaePbQUT5g3bNYBrPAo");
 
 // helper: gcd for u64
 fn gcd_u64(mut a: u64, mut b: u64) -> u64 {

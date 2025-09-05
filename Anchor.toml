@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "programs/composite_vault"
+]
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[programs.devnet]
+composite_vault = "HxGs1wgKnbVgC2FxqmgN7RcpuuaePbQUT5g3bNYBrPAo"
