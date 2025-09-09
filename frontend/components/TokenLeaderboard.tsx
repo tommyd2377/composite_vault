@@ -2,6 +2,9 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey } from "@solana/web3.js";
+import * as anchor from "@coral-xyz/anchor";
+import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } from "@solana/spl-token";
+import idl from "../anchor-idl/composite_vault.json";
 
 // Enable verbose debug logs for token minted checks. Toggle off in production.
 const DEBUG_TOKEN_CHECK = true;
@@ -52,6 +55,126 @@ export function TokenLeaderboard({ limit = 50 }: { limit?: number }) {
   const tokens: TokenRow[] = useMemo(() => data?.tokens || [], [data]);
   const { publicKey } = useWallet();
   const { connection } = useConnection();
+  const wallet = useWallet();
+
+  // ---------------- Redeem State ----------------
+  const [redeemingMint, setRedeemingMint] = useState<string | null>(null);
+  const [redeemError, setRedeemError] = useState<string | null>(null);
+  const [redeemSuccess, setRedeemSuccess] = useState<string | null>(null);
+
+  // Anchor program setup (lazy)
+  const program = useMemo(() => {
+    if (!connection || !wallet.publicKey) return null;
+    try {
+      if (!wallet.signTransaction || !wallet.signAllTransactions) {
+        console.warn("Wallet missing required sign methods for Anchor");
+        return null;
+      }
+      const provider = new anchor.AnchorProvider(connection, wallet as unknown as anchor.Wallet, { commitment: "confirmed" });
+      // Anchor 0.31.1 constructor signature is new Program(idl, provider?) — programId comes from idl.address.
+      // We previously passed (idl, programId, provider) which matched older Anchor versions and caused provider to be wrong.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const idlObj = idl as any;
+      if (!idlObj?.address) {
+        console.error("IDL missing address field; cannot instantiate Program");
+        return null;
+      }
+      const prog = new anchor.Program(idlObj as anchor.Idl, provider);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((prog as any)?._programId?.toBase58) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        console.debug("Anchor Program instantiated", (prog as any)._programId.toBase58());
+      }
+      return prog as anchor.Program;
+    } catch (e) {
+      console.error("Failed creating program", e);
+      return null;
+    }
+  }, [connection, wallet]);
+
+  const handleRedeem = async (compositeMintStr: string) => {
+    if (!program || !wallet.publicKey) return;
+    setRedeemError(null);
+    setRedeemSuccess(null);
+    setRedeemingMint(compositeMintStr);
+    try {
+      // Derive config PDA (same seeds as program)
+      const compositeMintPk = new PublicKey(compositeMintStr);
+      const [configPda] = PublicKey.findProgramAddressSync([
+        Buffer.from("config"),
+        compositeMintPk.toBuffer(),
+      ], program.programId);
+
+      // Fetch config account to learn num_assets and mints
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cfg: any = await (program.account as any).compositeConfig.fetch(configPda);
+      const numAssets: number = cfg.numAssets;
+      const mintPubkeys: string[] = cfg.mints.slice(0, numAssets).map((m: PublicKey) => m.toString());
+
+      // Derive mint_auth PDA
+      const [mintAuthPda] = PublicKey.findProgramAddressSync([
+        Buffer.from("mint_auth"),
+        configPda.toBuffer(),
+      ], program.programId);
+
+      // User composite ATA
+      const userCompositeAta = await getAssociatedTokenAddress(compositeMintPk, wallet.publicKey);
+
+      // For each mint: derive vault ATA (owner = mint_auth) and user ATA
+      const vaultAtas: PublicKey[] = [];
+      const userAtas: PublicKey[] = [];
+      const preIxs: anchor.web3.TransactionInstruction[] = [];
+      for (const mStr of mintPubkeys) {
+        const mPk = new PublicKey(mStr);
+        const vAta = await getAssociatedTokenAddress(mPk, mintAuthPda, true);
+        const uAta = await getAssociatedTokenAddress(mPk, wallet.publicKey);
+        // create user ATA if missing
+        const info = await connection.getAccountInfo(uAta);
+        if (!info) {
+          preIxs.push(createAssociatedTokenAccountInstruction(wallet.publicKey, uAta, wallet.publicKey, mPk));
+        }
+        vaultAtas.push(vAta);
+        userAtas.push(uAta);
+      }
+
+      // remaining accounts order (matches tests):
+      // [mints..., vaults..., user_token_accounts...]
+      const remaining = [
+        ...mintPubkeys.map((m) => ({ pubkey: new PublicKey(m), isSigner: false, isWritable: false })),
+        ...vaultAtas.map((v) => ({ pubkey: v, isSigner: false, isWritable: true })),
+        ...userAtas.map((u) => ({ pubkey: u, isSigner: false, isWritable: true })),
+      ];
+
+      const builder = program.methods
+        .redeemAndWithdraw(new anchor.BN(1))
+        .accounts({
+          user: wallet.publicKey,
+          compositeMint: compositeMintPk,
+          config: configPda,
+          mintAuth: mintAuthPda,
+          userComposite: userCompositeAta,
+          systemProgram: anchor.web3.SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        })
+        .remainingAccounts(remaining);
+      if (preIxs.length) builder.preInstructions(preIxs);
+      const txSig = await builder.rpc();
+
+      setRedeemSuccess(`Redeemed 1 composite: ${txSig}`);
+      // Invalidate minted cache for this composite mint so UI updates
+      mintedCheckedRef.current.delete(compositeMintStr);
+      setMintedMap((s) => ({ ...s, [compositeMintStr]: false }));
+    } catch (e) {
+      console.error("redeem error", e);
+  const errObj = e as Error;
+  const msg = errObj && errObj.message ? errObj.message : String(e);
+      setRedeemError(msg);
+    } finally {
+      setRedeemingMint(null);
+    }
+  };
 
   // minted status per composite mint: true = user has >0, false = zero, null = unknown/loading
   const [mintedMap, setMintedMap] = useState<Record<string, boolean | null>>({});
@@ -266,6 +389,13 @@ export function TokenLeaderboard({ limit = 50 }: { limit?: number }) {
         <div className="text-xs text-white/60">{isLoading ? "Loading…" : `${tokens.length} entries`}</div>
       </div>
 
+      {redeemError && (
+        <div className="text-xs text-red-400 mb-2 break-all">Redeem error: {redeemError}</div>
+      )}
+      {redeemSuccess && (
+        <div className="text-xs text-emerald-400 mb-2 break-all">{redeemSuccess}</div>
+      )}
+
       {error && <div className="text-red-400 text-sm">Failed to load tokens</div>}
 
       <ul className="divide-y divide-white/5">
@@ -292,12 +422,13 @@ export function TokenLeaderboard({ limit = 50 }: { limit?: number }) {
 
                   {minted === null && <span className="text-xs text-white/50">checking…</span>}
 
-                  {minted && (
+          {minted && (
                     <button
-                      className="px-2 py-1 text-xs rounded bg-blue-600/90 hover:opacity-90"
-                      onClick={() => console.log("Redeem", t.compositeMint)}
+                      className="px-2 py-1 text-xs rounded bg-blue-600/90 hover:opacity-90 disabled:opacity-40"
+                      disabled={!publicKey || redeemingMint === t.compositeMint}
+            onClick={() => handleRedeem(t.compositeMint)}
                     >
-                      Redeem
+                      {redeemingMint === t.compositeMint ? "Redeeming…" : "Redeem"}
                     </button>
                   )}
 
