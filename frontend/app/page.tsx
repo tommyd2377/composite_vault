@@ -1,4 +1,5 @@
 import TokenLeaderboard from "@/components/TokenLeaderboard";
+import CompositeValueTable from "@/components/CompositeValueTable";
 import { CounterCard } from "@/components/counter/CounterCard";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTwitter, faGithub, faTelegram, faLinkedin } from "@fortawesome/free-brands-svg-icons";
@@ -23,6 +24,7 @@ export default function Home() {
         </div>
         <div className="flex-1 max-w-2xl w-full">
           <TokenLeaderboard />
+          <CompositeValueTable />
         </div>
       </div>
 
