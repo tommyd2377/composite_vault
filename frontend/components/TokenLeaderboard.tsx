@@ -15,6 +15,7 @@ type TokenRow = {
   numAssets: number;
   decimals?: number;
   supply?: string;
+  totalValueUSD?: number;
 };
 
 export function TokenLeaderboard({ limit = 50 }: { limit?: number }) {
@@ -52,9 +53,55 @@ export function TokenLeaderboard({ limit = 50 }: { limit?: number }) {
     };
   }, []);
 
-  const tokens: TokenRow[] = useMemo(() => data?.tokens || [], [data]);
-  const { publicKey } = useWallet();
   const { connection } = useConnection();
+  const [valueMap, setValueMap] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!connection) return;
+      try {
+        const res = await fetch("/api/composites/value");
+        if (!res.ok) throw new Error(`value api ${res.status}`);
+        const json = await res.json();
+        if (!Array.isArray(json)) return;
+        if (cancelled) return;
+        const map = new Map<string, number>();
+        for (const entry of json) {
+          if (entry?.compositeMint) {
+            map.set(entry.compositeMint, Number(entry.totalValueUSD ?? 0));
+          }
+        }
+        setValueMap(map);
+      } catch (err) {
+        console.warn("Failed to load composite values", err);
+      }
+    };
+
+    run();
+    const timer = window.setInterval(run, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [connection]);
+
+  const tokens: TokenRow[] = useMemo(() => {
+    const raw = data?.tokens || [];
+    const filtered = raw.filter((row) => {
+      if (!row.supply) return true;
+      try {
+        return BigInt(row.supply) > BigInt(0);
+      } catch {
+        return true;
+      }
+    });
+
+    if (!valueMap.size) return filtered;
+    return filtered.map((row) => ({ ...row, totalValueUSD: valueMap.get(row.compositeMint) }));
+  }, [data, valueMap]);
+  const { publicKey } = useWallet();
   const wallet = useWallet();
 
   // ---------------- Redeem State ----------------
@@ -410,6 +457,9 @@ export function TokenLeaderboard({ limit = 50 }: { limit?: number }) {
               <div className="text-sm text-right">
                 <div className="text-sm font-mono">{t.supply ?? "-"}</div>
                 <div className="text-xs text-white/60">dec {t.decimals ?? "-"}</div>
+                {typeof t.totalValueUSD === "number" && !Number.isNaN(t.totalValueUSD) && (
+                  <div className="text-xs text-emerald-300 mt-1">${t.totalValueUSD.toFixed(2)}</div>
+                )}
 
                 <div className="mt-2 flex items-center justify-end gap-2">
                   <button
