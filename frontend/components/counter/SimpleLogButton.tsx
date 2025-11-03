@@ -32,6 +32,8 @@ type TokenInfo = {
   decimals?: number;
   name?: string;
   symbol?: string;
+  isNft?: boolean;
+  isComposite?: boolean;
 };
 
 export function SimpleLogButton() {
@@ -47,6 +49,7 @@ export function SimpleLogButton() {
   const [tokenMap, setTokenMap] = useState<Record<string, { name?: string; symbol?: string }>>({});
   const [selections, setSelections] = useState<Record<string, string>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const tokenAmountInputClass = "w-full rounded bg-gray-800/60 border border-white/6 px-2 py-1 text-right text-sm text-white";
   
 
   useEffect(() => {
@@ -63,11 +66,15 @@ export function SimpleLogButton() {
   
 
   const fetchAssets = useCallback(async () => {
-    if (!publicKey) return toast.error("Connect your wallet first");
+    if (!publicKey) {
+      toast.error("Connect your wallet first");
+      return;
+    }
+
     setLoading(true);
     try {
       const lamports = await connection.getBalance(publicKey);
-  const solBalance = lamports / LAMPORTS_PER_SOL;
+      const solBalance = lamports / LAMPORTS_PER_SOL;
 
       const resp = await connection.getParsedTokenAccountsByOwner(publicKey, {
         programId: TOKEN_PROGRAM_ID,
@@ -80,18 +87,32 @@ export function SimpleLogButton() {
         let uiAmount: number | null = null;
         if (tokenAmount?.uiAmount != null) uiAmount = tokenAmount.uiAmount;
         else if (tokenAmount?.uiAmountString) uiAmount = parseFloat(tokenAmount.uiAmountString);
-        else if (tokenAmount?.amount && tokenAmount?.decimals != null)
+        else if (tokenAmount?.amount && tokenAmount?.decimals != null) {
           uiAmount = Number(tokenAmount.amount) / Math.pow(10, tokenAmount.decimals);
+        }
+
+        const rawAmountStr = tokenAmount?.amount ?? "0";
+        let rawAmount = BigInt(0);
+        try {
+          rawAmount = BigInt(typeof rawAmountStr === "string" ? rawAmountStr : Number(rawAmountStr));
+        } catch {
+          rawAmount = BigInt(0);
+        }
+        const decimals = tokenAmount?.decimals;
+        const looksLikeNft = decimals === 0 && rawAmount <= BigInt(1);
 
         return {
           address: pubkey.toBase58(),
           mint: info?.mint,
           amount: uiAmount ?? 0,
-          decimals: tokenAmount?.decimals,
+          decimals,
           name: undefined,
           symbol: undefined,
+          isNft: looksLikeNft,
         } as TokenInfo;
       });
+
+      const fungibleTokens = parsed.filter((token) => !token.isNft);
 
       const solEntry: TokenInfo = {
         address: "SOL",
@@ -112,20 +133,20 @@ export function SimpleLogButton() {
               if (tk.address) map[tk.address] = { name: tk.name, symbol: tk.symbol };
             });
             setTokenMap(map);
-            parsed.forEach((p) => {
-              const meta = map[p.mint as string];
+            fungibleTokens.forEach((token) => {
+              const meta = map[token.mint as string];
               if (meta) {
-                p.name = meta.name;
-                p.symbol = meta.symbol;
+                token.name = meta.name;
+                token.symbol = meta.symbol;
               }
             });
           }
         } else {
-          parsed.forEach((p) => {
-            const meta = tokenMap[p.mint as string];
+          fungibleTokens.forEach((token) => {
+            const meta = tokenMap[token.mint as string];
             if (meta) {
-              p.name = meta.name;
-              p.symbol = meta.symbol;
+              token.name = meta.name;
+              token.symbol = meta.symbol;
             }
           });
         }
@@ -135,12 +156,12 @@ export function SimpleLogButton() {
 
       try {
         const METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
-        const missing = parsed.filter((p) => !(p.symbol || p.name) && p.mint);
+        const missing = fungibleTokens.filter((token) => !(token.symbol || token.name) && token.mint);
         if (missing.length > 0) {
           await Promise.all(
-            missing.map(async (p) => {
+            missing.map(async (token) => {
               try {
-                const mintPub = new PublicKey(p.mint as string);
+                const mintPub = new PublicKey(token.mint as string);
                 const [metaPda] = await PublicKey.findProgramAddress(
                   [Buffer.from("metadata"), METADATA_PROGRAM_ID.toBuffer(), mintPub.toBuffer()],
                   METADATA_PROGRAM_ID
@@ -159,8 +180,8 @@ export function SimpleLogButton() {
                   offset += 4;
                   const symBytes = new Uint8Array(buf.buffer, buf.byteOffset + offset, symLen);
                   const symbol = new TextDecoder().decode(symBytes).replace(/\0+$/, "");
-                  if (name) p.name = name;
-                  if (symbol) p.symbol = symbol;
+                  if (name) token.name = name;
+                  if (symbol) token.symbol = symbol;
                 }
               } catch {
                 // ignore per-token errors
@@ -172,14 +193,55 @@ export function SimpleLogButton() {
         console.warn("Failed to fetch on-chain metadata", err);
       }
 
-      setTokens([solEntry, ...parsed]);
+      try {
+        const programId = program?.programId;
+        if (programId) {
+          await Promise.all(
+            fungibleTokens
+              .filter((token) => token.mint && token.mint !== "SOL")
+              .map(async (token) => {
+                if (!token.mint) return;
+                try {
+                  const mintPk = new PublicKey(token.mint);
+                  const mintInfo = await getTokenMint(connection, mintPk);
+                  if (mintInfo.decimals !== undefined) {
+                    token.decimals = mintInfo.decimals;
+                  }
+                  const [configPda] = PublicKey.findProgramAddressSync([
+                    Buffer.from("config"),
+                    mintPk.toBuffer(),
+                  ], programId);
+                  const [mintAuthPda] = PublicKey.findProgramAddressSync([
+                    Buffer.from("mint_auth"),
+                    configPda.toBuffer(),
+                  ], programId);
+                  if (mintInfo.mintAuthority && mintInfo.mintAuthority.equals(mintAuthPda)) {
+                    token.isComposite = true;
+                  }
+                } catch (err) {
+                  console.warn("Composite token detection failed", err);
+                }
+              })
+          );
+        }
+      } catch (err) {
+        console.warn("Failed determining composite tokens", err);
+      }
+
+      const filteredTokens = fungibleTokens.filter((token) => {
+        if (token.isComposite) return false;
+        const amt = Number(token.amount ?? 0);
+        return Number.isFinite(amt) && amt > 0;
+      });
+
+      setTokens([solEntry, ...filteredTokens]);
     } catch (err) {
       console.error("Failed to fetch assets", err);
       toast.error("Failed to fetch wallet assets (see console)");
     } finally {
       setLoading(false);
     }
-  }, [publicKey, connection, tokenMap]);
+  }, [publicKey, connection, tokenMap, program]);
 
   const toggleOpen = React.useCallback(async () => {
     if (!open) {
@@ -189,15 +251,9 @@ export function SimpleLogButton() {
       setOpen(false);
     }
   }, [open, fetchAssets]);
-  // NOTE: previous implementation tried to mutate the inner DOM of WalletMultiButton
-  // to replace labels and intercept clicks. That approach was brittle and caused
-  // layout/color mismatches. We now render a styled button that uses the
-  // wallet-adapter classes and calls the stable `fetchAssets` callback when
-  // opened. This keeps visuals identical and avoids DOM mutation.
 
   const onToggleSelect = (t: TokenInfo) => {
-  // don't allow selecting native SOL here (not an SPL token)
-  if (t.address === "SOL") return;
+    if (t.address === "SOL") return;
     setSelections((prev) => {
       const copy = { ...prev };
       if (t.address in copy) {
@@ -218,9 +274,9 @@ export function SimpleLogButton() {
 
     setSelections((prev) => {
       const copy = { ...prev };
-  // don't allow editing amounts for SOL (not an SPL token in this flow)
-  if (t.address === "SOL") return copy;
-  copy[t.address] = valueNum === 0 ? "" : String(valueNum);
+      // don't allow editing amounts for SOL (not an SPL token in this flow)
+      if (t.address === "SOL") return copy;
+      copy[t.address] = valueNum === 0 ? "" : String(valueNum);
       return copy;
     });
   };
@@ -541,7 +597,7 @@ export function SimpleLogButton() {
                           setSelections((prev) => ({ ...prev, [t.address]: "" }));
                         }
                       }}
-                      className="w-full rounded bg-gray-800/60 border border-white/6 px-2 py-1 text-right text-sm text-white"
+                      className={tokenAmountInputClass}
                       value={selections[t.address] ?? ""}
                       onChange={(e) => onChangeAmount(t, e.target.value)}
                       placeholder="0"
@@ -580,4 +636,5 @@ export function SimpleLogButton() {
     </div>
   );
 }
-                
+
+export default SimpleLogButton;
