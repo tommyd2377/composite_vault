@@ -16,14 +16,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json(responseCache.payload);
     }
 
-    const deploymentUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : null;
-    const baseUrl = process.env.API_BASE_URL || deploymentUrl || `http://${req.headers.host ?? "localhost:3000"}`;
+    const deploymentUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
+    const headerHost = req.headers.host ?? null;
+    const derivedHost = headerHost
+      ? headerHost.includes("localhost")
+        ? `http://${headerHost}`
+        : `https://${headerHost}`
+      : "http://localhost:3000";
+    const baseUrl = process.env.API_BASE_URL || deploymentUrl || derivedHost;
+
+    console.info("/api/composites/value fetching tokens", {
+      baseUrl,
+      deploymentUrl,
+      headerHost,
+    });
+
     const apiTokensRes = await fetch(`${baseUrl}/api/tokens`);
-    if (!apiTokensRes.ok) throw new Error(`tokens api ${apiTokensRes.status}`);
-    const apiTokens = await apiTokensRes.json();
-    const tokens: Array<{ compositeMint: string }> = apiTokens?.tokens ?? [];
+    const tokensBody = await apiTokensRes.text();
+    if (!apiTokensRes.ok) {
+      console.error("/api/composites/value tokens fetch failed", {
+        status: apiTokensRes.status,
+        baseUrl,
+        snippet: tokensBody.slice(0, 500),
+      });
+      throw new Error(`tokens api ${apiTokensRes.status}`);
+    }
+    let apiTokens: unknown;
+    try {
+      apiTokens = JSON.parse(tokensBody) as unknown;
+    } catch (jsonErr) {
+      console.error("/api/composites/value failed parsing /api/tokens response", {
+        baseUrl,
+        tokensBody,
+        jsonErr,
+      });
+      throw new Error("tokens api invalid json");
+    }
+    const tokensData = apiTokens as { tokens?: Array<{ compositeMint: string }> } | null;
+    const tokens: Array<{ compositeMint: string }> = tokensData?.tokens ?? [];
 
     const rpc = process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com";
     const connection = new Connection(rpc, { commitment: "confirmed" });
@@ -35,7 +65,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     responseCache = { ts: now, payload: values };
     return res.status(200).json(values);
   } catch (err) {
-    console.error("/api/composites/value error", err);
+    console.error("/api/composites/value error", {
+      err,
+      env: {
+        API_BASE_URL: process.env.API_BASE_URL,
+        VERCEL_URL: process.env.VERCEL_URL,
+        SOLANA_RPC_URL: process.env.SOLANA_RPC_URL,
+      },
+    });
     return res.status(500).json({ ok: false, error: String(err) });
   }
 }
