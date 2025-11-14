@@ -22,13 +22,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ? headerHost.includes("localhost")
         ? `http://${headerHost}`
         : `https://${headerHost}`
-      : "http://localhost:3000";
-    const baseUrl = process.env.API_BASE_URL || deploymentUrl || derivedHost;
+      : null;
+    const baseUrl = process.env.API_BASE_URL || derivedHost || deploymentUrl || "http://localhost:3000";
 
     console.info("/api/composites/value fetching tokens", {
       baseUrl,
       deploymentUrl,
       headerHost,
+      derivedHost,
     });
 
     const apiTokensRes = await fetch(`${baseUrl}/api/tokens`);
