@@ -153,9 +153,19 @@ export async function fetchCompositeValues(connection: Connection): Promise<Comp
       const vaultInfo = vaultInfos[i];
       if (!vaultInfo || vaultInfo.data.length === 0) continue;
 
-  const decoded = AccountLayout.decode(vaultInfo.data);
-  const amountBuffer = decoded.amount as Buffer;
-  const rawAmount = amountBuffer.readBigUInt64LE(0);
+      const decoded = AccountLayout.decode(vaultInfo.data);
+      const amountField = decoded.amount as unknown;
+
+      let rawAmount: bigint;
+      if (typeof amountField === "bigint") {
+        rawAmount = amountField;
+      } else if (Buffer.isBuffer(amountField)) {
+        rawAmount = amountField.readBigUInt64LE(0);
+      } else if (amountField instanceof Uint8Array) {
+        rawAmount = Buffer.from(amountField).readBigUInt64LE(0);
+      } else {
+        throw new Error("Unsupported amount field type in token account");
+      }
       const mintStr = mint.toBase58();
       const decimals = await getMintDecimals(connection, mintStr);
       const balance = Number(rawAmount) / 10 ** decimals;
