@@ -16,7 +16,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json(responseCache.payload);
     }
 
-    const baseUrl = process.env.API_BASE_URL || "http://localhost:3000";
+    const deploymentUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : null;
+    const baseUrl = process.env.API_BASE_URL || deploymentUrl || `http://${req.headers.host ?? "localhost:3000"}`;
     const apiTokensRes = await fetch(`${baseUrl}/api/tokens`);
     if (!apiTokensRes.ok) throw new Error(`tokens api ${apiTokensRes.status}`);
     const apiTokens = await apiTokensRes.json();
