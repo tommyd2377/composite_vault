@@ -1,6 +1,6 @@
-# Composite
+# Blndr
 
-Composite is a Solana dApp for creating and redeeming basket-backed SPL tokens ("composite tokens").
+Blndr is a Solana dApp for creating and redeeming basket-backed SPL tokens ("composite tokens").
 
 The repository has two main parts:
 
