@@ -1,5 +1,5 @@
-import "./globals.css";
 import "@solana/wallet-adapter-react-ui/styles.css";
+import "./globals.css";
 
 import { Geist, Geist_Mono } from "next/font/google";
 
@@ -19,7 +19,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Blndr",
-  description: "A minimal frontend for Anchor counter program",
+  description:
+    "Create and redeem basket-backed composite tokens on Solana devnet.",
 };
 
 export default function RootLayout({
@@ -30,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-950 text-white`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-[#02040a] text-slate-100 antialiased`}
       >
         <SolanaProvider>
           {children}
@@ -41,12 +42,12 @@ export default function RootLayout({
             richColors={false}
             toastOptions={{
               style: {
-                background: "#171717",
+                background: "#020617",
                 color: "white",
-                border: "1px solid rgba(75, 85, 99, 0.3)",
+                border: "1px solid rgba(51, 65, 85, 0.85)",
                 borderRadius: "0.5rem",
                 padding: "0.75rem 1rem",
-                boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)",
+                boxShadow: "0 18px 60px rgba(0, 0, 0, 0.38)",
               },
               className: "toast-container",
             }}

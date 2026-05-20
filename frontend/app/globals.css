@@ -46,8 +46,15 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
+  --background: #02040a;
+  --foreground: #f8fafc;
+  --blndr-purple: #9945ff;
+  --blndr-green: #14f195;
+  --blndr-blue: #00c2ff;
+  --blndr-ink: #02040a;
+  --blndr-panel: #020617;
+  --blndr-panel-soft: #0f172a;
+  --blndr-border: rgba(148, 163, 184, 0.18);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.141 0.005 285.823);
   --popover: oklch(1 0 0);
@@ -80,8 +87,8 @@
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
+  --background: #02040a;
+  --foreground: #f8fafc;
   --card: oklch(0.21 0.006 285.885);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.21 0.006 285.885);
@@ -120,4 +127,142 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  ::selection {
+    background: var(--blndr-purple);
+    color: #ffffff;
+  }
+}
+
+@layer components {
+  .blndr-page {
+    @apply min-h-screen overflow-x-hidden bg-[#02040a] text-slate-100;
+  }
+
+  .blndr-atmosphere {
+    background:
+      radial-gradient(circle at 15% 5%, rgba(153, 69, 255, 0.24), transparent 34rem),
+      radial-gradient(circle at 80% 0%, rgba(20, 241, 149, 0.13), transparent 28rem),
+      radial-gradient(circle at 55% 42%, rgba(0, 194, 255, 0.1), transparent 30rem),
+      linear-gradient(180deg, #02040a 0%, #030712 48%, #02040a 100%);
+  }
+
+  .blndr-grid {
+    background-image:
+      linear-gradient(rgba(148, 163, 184, 0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.07) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.95), transparent 72%);
+  }
+
+  .blndr-container {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .blndr-surface {
+    @apply rounded-lg border border-slate-800/90 bg-slate-950/85 shadow-[0_24px_80px_rgba(0,0,0,0.34)] backdrop-blur;
+  }
+
+  .blndr-surface-soft {
+    @apply rounded-lg border border-slate-800 bg-slate-900/60;
+  }
+
+  .blndr-gradient-text {
+    @apply bg-gradient-to-r from-[#9945FF] via-[#00C2FF] to-[#14F195] bg-clip-text text-transparent;
+  }
+
+  .blndr-pill {
+    @apply inline-flex min-h-8 items-center gap-2 rounded-md border border-slate-700 bg-slate-950/80 px-2.5 text-xs font-medium text-slate-300;
+  }
+
+  .blndr-pill-accent {
+    @apply inline-flex min-h-8 items-center gap-2 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2.5 text-xs font-medium text-emerald-100;
+  }
+
+  .blndr-button-primary {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-[#9945FF] via-[#00C2FF] to-[#14F195] px-4 text-sm font-semibold text-slate-950 transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14F195]/60 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .blndr-button-secondary {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-slate-700 bg-slate-900 px-4 text-sm font-medium text-slate-100 transition hover:border-[#00C2FF]/70 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00C2FF]/40 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .blndr-button-ghost {
+    @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium text-slate-300 transition hover:bg-slate-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00C2FF]/40 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .blndr-input {
+    @apply min-h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[#00C2FF] focus:ring-2 focus:ring-[#00C2FF]/25 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .blndr-address {
+    @apply break-all font-mono text-xs text-slate-300;
+  }
+
+  .blndr-notice {
+    @apply rounded-lg border border-slate-800 bg-slate-900/70 p-3 text-sm text-slate-300;
+  }
+
+  .blndr-notice-error {
+    @apply rounded-lg border border-red-900/70 bg-red-950/45 p-3 text-sm text-red-100;
+  }
+
+  .blndr-notice-success {
+    @apply rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-100;
+  }
+
+  .blndr-empty {
+    @apply rounded-lg border border-dashed border-slate-700 bg-slate-900/55 p-5 text-sm text-slate-400;
+  }
+
+  .blndr-skeleton {
+    @apply animate-pulse rounded-md bg-slate-800/70;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+.wallet-adapter-button {
+  min-height: 2.75rem !important;
+  border-radius: 0.5rem !important;
+  border: 1px solid rgba(51, 65, 85, 0.95) !important;
+  background: rgba(15, 23, 42, 0.92) !important;
+  color: #f8fafc !important;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease !important;
+}
+
+.wallet-adapter-button:not([disabled]):hover {
+  border-color: rgba(0, 194, 255, 0.7) !important;
+  background: rgba(30, 41, 59, 0.96) !important;
+  box-shadow: 0 0 28px rgba(0, 194, 255, 0.12) !important;
+}
+
+.wallet-adapter-button-trigger {
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.92)) padding-box,
+    linear-gradient(90deg, rgba(153, 69, 255, 0.75), rgba(20, 241, 149, 0.7)) border-box !important;
+  border-color: transparent !important;
+}
+
+.wallet-adapter-button[disabled] {
+  cursor: not-allowed !important;
+  opacity: 0.55 !important;
 }
